@@ -1,0 +1,20 @@
+{
+  "env": {
+    "ECC_HOOK_PROFILE": "standard"
+  },
+  "plugins": [
+    "everything-claude-code@everything-claude-code",
+    "github@claude-plugins-official",
+    "superpowers@claude-plugins-official",
+    "figma@claude-plugins-official",
+    "security-guidance@claude-plugins-official",
+    "skill-creator@claude-plugins-official",
+    "learning-output-style@claude-plugins-official"
+  ],
+  "marketplaces": {
+    "everything-claude-code": {
+      "source": "github",
+      "repo": "affaan-m/everything-claude-code"
+    }
+  }
+}
