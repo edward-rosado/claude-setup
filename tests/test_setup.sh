@@ -66,16 +66,18 @@ assert "hooks.md exists"         test -e "$TEST_HOME/rules/hooks.md"
 assert "performance.md exists"   test -e "$TEST_HOME/rules/performance.md"
 
 # Skills should exist (flattened)
-assert "eddie-voice skill exists" test -e "$TEST_HOME/skills/eddie-voice"
-assert "open-pr skill exists"     test -e "$TEST_HOME/skills/open-pr"
-assert "update-pr skill exists"   test -e "$TEST_HOME/skills/update-pr"
-assert "pr-diagrams skill exists" test -e "$TEST_HOME/skills/pr-diagrams"
-assert "dotnet skill exists"      test -e "$TEST_HOME/skills/dotnet"
+assert "eddie-voice skill exists"       test -e "$TEST_HOME/skills/eddie-voice"
+assert "open-pr skill exists"           test -e "$TEST_HOME/skills/open-pr"
+assert "update-pr skill exists"         test -e "$TEST_HOME/skills/update-pr"
+assert "pr-diagrams skill exists"       test -e "$TEST_HOME/skills/pr-diagrams"
+assert "dotnet skill exists"            test -e "$TEST_HOME/skills/dotnet"
+assert "create-python-repo skill exists" test -e "$TEST_HOME/skills/create-python-repo"
 
 # Content should be readable through the links
 assert "agents.md readable"       test -r "$TEST_HOME/rules/agents.md"
 assert "eddie-voice SKILL.md readable" test -r "$TEST_HOME/skills/eddie-voice/SKILL.md"
 assert "open-pr SKILL.md readable"     test -r "$TEST_HOME/skills/open-pr/SKILL.md"
+assert "create-python-repo scaffold script readable" test -r "$TEST_HOME/skills/create-python-repo/scripts/scaffold.py"
 
 # Settings should exist and have expected keys
 assert "settings.json exists"     test -f "$TEST_HOME/settings.json"

@@ -16,7 +16,7 @@ chmod +x setup.sh
 | Component | Source | Target |
 |-----------|--------|--------|
 | Rules (9) | `rules/workflow\|standards\|optimization/` | `~/.claude/rules/` (flattened) |
-| Skills (5) | `skills/comms\|git\|lang/` | `~/.claude/skills/` (flattened) |
+| Skills (6) | `skills/comms\|git\|lang/` | `~/.claude/skills/` (flattened) |
 | Instincts | `learned/instincts/` | `~/.claude/homunculus/instincts/` |
 | Settings | `settings.json` | Merged into `~/.claude/settings.json` |
 | Plugins (7) | Declared in `settings.json` | Installed via Claude CLI |
