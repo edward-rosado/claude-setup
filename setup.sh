@@ -10,6 +10,7 @@ CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
 BACKUP_DIR="$CLAUDE_HOME/backups/claude-setup-$(date +%Y%m%d-%H%M%S)"
 DRY_RUN=false
 VERBOSE=false
+COPY_COUNT=0  # files copied instead of linked (Windows, no Developer Mode)
 
 # ─── Colors ───────────────────────────────────────────────
 RED='\033[0;31m'
@@ -39,7 +40,7 @@ detect_platform() {
             SYMLINK_METHOD="native"
         else
             SYMLINK_METHOD="junction"
-            log_warn "Developer Mode not enabled. Using junctions for directories."
+            log_warn "Developer Mode off: skill directories → junctions, rule/instinct files → copies."
         fi
     else
         SYMLINK_METHOD="native"
@@ -75,6 +76,26 @@ is_our_link() {
     return 1
 }
 
+# Convert an MSYS/Cygwin path (/c/Users/...) to a Windows path
+# (C:\Users\...) for the native `mklink` command. Prefers `cygpath`;
+# falls back to a sed transform if cygpath is unavailable.
+to_windows_path() {
+    local p="$1"
+    if command -v cygpath &> /dev/null; then
+        cygpath -w "$p"
+    else
+        # /c/foo/bar -> C:\foo\bar
+        echo "$p" | sed -E 's#^/([a-zA-Z])/#\U\1:\\#; s#/#\\#g'
+    fi
+}
+
+# Create one link from $source to $target. Honors SYMLINK_METHOD:
+#   * native   -> `ln -sf` (Unix, and Windows with Developer Mode).
+#   * junction -> Windows without Developer Mode. Directories become
+#                 junctions (`mklink /J`, no elevation needed); FILES
+#                 cannot be junctioned, so they are COPIED — a snapshot,
+#                 so re-run `--install` after editing a copied file.
+# A "$count_copies" warning is surfaced by the caller via COPY_COUNT.
 create_symlink() {
     local source="$1"
     local target="$2"
@@ -85,8 +106,21 @@ create_symlink() {
         return 0
     fi
 
+    local is_dir="false"
+    [[ -d "$source" ]] && is_dir="true"
+
+    # Decide the method up front so --dry-run reports honestly.
+    local method="symlink"
+    if [[ "$SYMLINK_METHOD" == "junction" ]]; then
+        if [[ "$is_dir" == "true" ]]; then
+            method="junction"
+        else
+            method="copy"
+        fi
+    fi
+
     if $DRY_RUN; then
-        log_dry "Would link: $target → $source"
+        log_dry "Would link ($method): $target → $source"
         return 0
     fi
 
@@ -105,14 +139,27 @@ create_symlink() {
     # Create parent directory
     mkdir -p "$(dirname "$target")"
 
-    # Create the symlink
-    ln -sf "$source" "$target"
+    case "$method" in
+        junction)
+            # `mklink /J` needs native Windows paths and runs via cmd.exe.
+            cmd //c mklink //J "$(to_windows_path "$target")" \
+                "$(to_windows_path "$source")" > /dev/null
+            ;;
+        copy)
+            # Junctions cannot link files; copy instead (a snapshot).
+            cp "$source" "$target"
+            COPY_COUNT=$((COPY_COUNT + 1))
+            ;;
+        *)
+            ln -sf "$source" "$target"
+            ;;
+    esac
 
-    log_ok "Linked: $target → $source"
+    log_ok "Linked ($method): $target → $source"
 
     # Record in manifest if available
     if [[ -n "${MANIFEST_FILE:-}" && -f "${MANIFEST_FILE:-/dev/null}" ]]; then
-        echo "$target|$source" >> "$MANIFEST_FILE"
+        echo "$target|$source|$method" >> "$MANIFEST_FILE"
     fi
 }
 
@@ -189,6 +236,11 @@ do_install() {
     install_plugins
 
     echo ""
+    if [[ "$COPY_COUNT" -gt 0 ]]; then
+        log_warn "$COPY_COUNT file(s) were COPIED, not linked (Windows, Developer Mode off)."
+        log_warn "Copies are snapshots — re-run 'setup.sh --install' after editing a rule or instinct."
+        log_warn "Enable Developer Mode for live file symlinks."
+    fi
     log_ok "Installation complete!"
 }
 
@@ -289,8 +341,9 @@ do_uninstall() {
     local manifest="$CLAUDE_HOME/.claude-setup-manifest"
 
     if [[ -f "$manifest" ]]; then
-        # Use manifest to know exactly what to remove
-        while IFS='|' read -r target source; do
+        # Use manifest to know exactly what to remove. Manifest lines are
+        # `target|source|method`; only $target is needed here.
+        while IFS='|' read -r target source method; do
             [[ -z "$target" ]] && continue
             if [[ -e "$target" ]]; then
                 if $DRY_RUN; then
