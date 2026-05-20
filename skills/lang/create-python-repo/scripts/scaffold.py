@@ -724,11 +724,14 @@ _HANDOFF = (
     "A `git push` just completed. The mechanical code-review gates (lint + "
     "architecture) PASSED. Now complete the code review of the pushed "
     "commits by following .claude/skills/code-review/SKILL.md. Run it as "
-    "ONE TARGETED AGENT PER REVIEW DIMENSION, in parallel (architecture, "
-    "house style / type hygiene, tests + coverage, abstraction reuse, docs "
-    "freshness) — not one wide agent. Then synthesize the per-dimension "
-    "findings into ONE structured Critical/Important/Minor verdict and post "
-    "it as a single PR comment."
+    "ONE TARGETED AGENT PER REVIEW DIMENSION, in parallel — not one wide "
+    "agent. The skill's 'Execution model' table is the authoritative "
+    "dimension list; spawn one agent per row: architecture / "
+    "import-direction, house style / type hygiene, tests + coverage, side "
+    "effects, abstraction reuse, docs freshness, and execution shape + "
+    "learning capture. Then synthesize the per-dimension findings into ONE "
+    "structured Critical/Important/Minor verdict and post it as a single "
+    "PR comment."
 )
 
 _GATES: tuple[tuple[str, list[str]], ...] = (
@@ -883,7 +886,7 @@ CLAUDE_SETTINGS = '''\
         "action": {{
           "type": "Agent",
           "agent": "code-reviewer",
-          "prompt": "A `git push` just completed. Execute the code-review skill (.claude/skills/code-review/SKILL.md) against the pushed commits. Run it as ONE TARGETED AGENT PER DIMENSION, in parallel - not one wide agent: architecture/import-direction, house style/type hygiene, tests + coverage, abstraction reuse, docs freshness. Then synthesize the per-dimension findings into ONE structured Critical/Important/Minor verdict."
+          "prompt": "A `git push` just completed. Execute the code-review skill (.claude/skills/code-review/SKILL.md) against the pushed commits. Run it as ONE TARGETED AGENT PER DIMENSION, in parallel - not one wide agent. The skill's 'Execution model' table is the authoritative dimension list; spawn one agent per row: architecture/import-direction, house style/type hygiene, tests + coverage, side effects, abstraction reuse, docs freshness, and execution shape + learning capture. Then synthesize the per-dimension findings into ONE structured Critical/Important/Minor verdict."
         }}
       }}
     ]
@@ -1317,20 +1320,28 @@ Do NOT run this as one wide agent. A single agent spread across
 architecture + house style + tests + abstraction + docs does each
 shallowly. When you have the `Agent` tool, dispatch **one agent per
 dimension, in parallel** (a single message, multiple `Agent` calls), each
-scoped to its dimension:
+scoped to its dimension.
 
-| Dimension agent | Checks |
-|---|---|
-| Architecture / import-direction | layer order, import direction, no new unreviewed top-level module |
-| House style / type hygiene | frozen DTOs, type annotations, no mutable globals, no bare `Any`, `Final` constants |
-| Tests + coverage | suite green, 100% branch on touched files, intent-named tests, shared fixtures |
-| Side effects | no I/O / `print` / `input()` at import time |
-| Abstraction reuse | every new module/class surveyed against existing abstractions; no reimplementation |
-| Docs freshness | `docs/ARCHITECTURE.md` + diagrams updated for an architecture-surface change; quoted counts re-verified |
+The table below is the **authoritative dimension list** - it covers ALL
+of the `docs/PLAN_REQUIREMENTS.md` gates between its rows. Spawn one agent
+per row; do not drop a row. Any text elsewhere that enumerates dimensions
+(the hook prompt, the codex handoff) points back here and is not itself
+exhaustive.
 
-Then **synthesize** the per-dimension findings into ONE consolidated
+| Dimension agent | Checks | Gates |
+|---|---|---|
+| Architecture / import-direction | layer order, import direction, no new unreviewed top-level module | 7, 8 |
+| House style / type hygiene | frozen DTOs, type annotations, no mutable globals, no bare `Any`, `Final` constants | 5 |
+| Tests + coverage | suite green, 100% branch on touched files, no new dead code, intent-named tests, shared fixtures, lint clean | 1, 2, 3, 6 |
+| Side effects | no I/O / `print` / `input()` at import time | 9 |
+| Abstraction reuse | every new module/class surveyed against existing abstractions; no reimplementation | 11 |
+| Docs freshness | `docs/ARCHITECTURE.md` + diagrams updated for an architecture-surface change; quoted counts re-verified | 4, 12 |
+| Execution shape + learning capture | one bundled PR per logical change (no stacked cascade); a reusable pattern was extracted to `.claude/skills/learned/` or `.claude/rules/` where applicable | 10, 13 |
+
+Every one of the 13 gates appears in exactly one row above. Then
+**synthesize** the per-dimension findings into ONE consolidated
 Critical / Important / Minor report and post ONE PR comment. If the
-`Agent` tool is unavailable, walk the dimensions sequentially yourself.
+`Agent` tool is unavailable, walk every dimension sequentially yourself.
 
 ## Procedure (per dimension)
 
@@ -1388,8 +1399,9 @@ Code review runs as one targeted agent per dimension, in parallel - not
 one wide agent. How you act depends on your prompt:
 
 * **As an orchestrator** ("review PR #N"): spawn one `code-reviewer` agent
-  per dimension in parallel (architecture, house style, tests + coverage,
-  abstraction reuse, docs freshness), each scoped to one dimension. Then
+  per dimension in parallel - one per row of the "Execution model" table
+  in `.claude/skills/code-review/SKILL.md` (that table is the authoritative
+  dimension list; do not drop a row), each scoped to one dimension. Then
   synthesize the per-dimension findings into ONE Critical/Important/Minor
   verdict and post ONE PR comment.
 * **As a single-dimension worker** (your prompt names a dimension): review
@@ -1576,11 +1588,13 @@ in parallel - not one wide agent covering every dimension. A single agent
 spread across architecture + house style + tests + abstraction + docs does
 each one shallowly; per-dimension agents go deep.
 
-Spawn one agent per dimension (architecture, house style/type hygiene,
-tests + coverage, side effects, abstraction reuse, docs freshness), each
-with a prompt scoped to ONLY its dimension. An orchestrator synthesizes
-the per-dimension findings into one Critical/Important/Minor verdict and
-posts one PR comment. See `.claude/skills/code-review/SKILL.md`.
+Spawn one agent per dimension - one per row of the "Execution model"
+table in `.claude/skills/code-review/SKILL.md`, which is the authoritative
+dimension list and maps every `docs/PLAN_REQUIREMENTS.md` gate to a row.
+Do not drop a row. Each agent's prompt is scoped to ONLY its dimension. An
+orchestrator synthesizes the per-dimension findings into one
+Critical/Important/Minor verdict and posts one PR comment. See
+`.claude/skills/code-review/SKILL.md`.
 '''
 
 RULE_AUTONOMOUS_EXECUTION = '''\
