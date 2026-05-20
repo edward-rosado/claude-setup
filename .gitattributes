@@ -1,0 +1,18 @@
+# Line-ending policy. Without this, a Windows clone (Git's
+# core.autocrlf=true default) checks out setup.sh with CRLF endings, and
+# bash then fails to execute it ("bash\r: No such file or directory").
+# Shell scripts and Python MUST be LF on every platform.
+
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.py    text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.toml  text eol=lf
+
+# PowerShell is fine with either, but keep it LF for consistency with the
+# rest of the repo and so diffs stay clean cross-platform.
+*.ps1   text eol=lf
