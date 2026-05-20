@@ -1945,13 +1945,64 @@ contract; the individual jobs are the implementation detail.
 
 DEVCONTAINER = '''\
 {{
+  "//": "Dev container for {repo} - used by GitHub Codespaces, VS Code Dev Containers, and cloud-agent runners (Claude Code, codex). It reproduces the exact dev setup a contributor would build by hand: pinned Python, the package installed editable with dev extras, just, and the versioned git hooks activated. Linux checks out symlinks natively, so the .agents/skills -> .claude/skills/learned symlink (codex skill discovery) materializes on clone with no extra step.",
+
   "name": "{repo}-dev",
   "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+
   "features": {{
-    "ghcr.io/devcontainers/features/github-cli:1": {{}}
+    "ghcr.io/devcontainers/features/github-cli:1": {{}},
+    "ghcr.io/devcontainers/features/git:1": {{}}
   }},
-  "postCreateCommand": "pip install -e '.[dev]' && (command -v just || cargo install just || curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to ~/.local/bin) && git config core.hooksPath .githooks",
-  "containerEnv": {{ "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUNBUFFERED": "1" }}
+
+  "//postCreate": "Install the package + dev extras, install `just` (cargo, then the prebuilt-binary installer as fallback), and point git at the versioned .githooks/ directory so the pre-commit + pre-push gates are live.",
+  "postCreateCommand": "pip install -e '.[dev]' && (command -v just || cargo install just || curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to ~/.local/bin) && git config core.hooksPath .githooks && git config core.symlinks true",
+
+  "//runtime": "PYTHONDONTWRITEBYTECODE keeps __pycache__ out of the workspace; PYTHONUNBUFFERED streams pytest output live.",
+  "containerEnv": {{
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+  }},
+
+  "customizations": {{
+    "vscode": {{
+      "extensions": [
+        "ms-python.python",
+        "ms-python.black-formatter",
+        "ms-python.isort",
+        "charliermarsh.ruff",
+        "tamasfe.even-better-toml",
+        "editorconfig.editorconfig"
+      ],
+      "settings": {{
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.terminal.activateEnvironment": false,
+        "python.testing.pytestEnabled": true,
+        "python.testing.unittestEnabled": false,
+        "python.testing.pytestArgs": ["tests"],
+        "[python]": {{
+          "editor.defaultFormatter": "ms-python.black-formatter",
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {{
+            "source.organizeImports": "explicit",
+            "source.fixAll": "explicit"
+          }}
+        }},
+        "black-formatter.args": ["--target-version=py311"],
+        "isort.args": ["--profile=black"],
+        "files.eol": "\\n",
+        "files.insertFinalNewline": true,
+        "files.trimTrailingWhitespace": true,
+        "[markdown]": {{ "files.trimTrailingWhitespace": false }},
+        "search.exclude": {{
+          "**/.venv": true,
+          "**/__pycache__": true,
+          "**/.pytest_cache": true,
+          "**/.ruff_cache": true
+        }}
+      }}
+    }}
+  }}
 }}
 '''
 

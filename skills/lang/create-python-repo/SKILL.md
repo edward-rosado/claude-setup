@@ -78,7 +78,15 @@ quality-of-life item, all the bells and whistles**:
 **Editor / commit hygiene**
 - The lint trio (ruff + black + isort), `vulture` dead-code gate,
   `.pre-commit-config.yaml`, `.editorconfig`, `.gitattributes`.
-- A `Justfile` task runner, a dev container, `LICENSE`, `CHANGELOG.md`.
+- A `Justfile` task runner, `LICENSE`, `CHANGELOG.md`.
+
+**Docker dev container** (`.devcontainer/devcontainer.json`)
+- A reproducible dev environment for GitHub Codespaces, VS Code Dev
+  Containers, and cloud-agent runners (Claude Code, codex). Pinned Python
+  image; `postCreateCommand` installs the package + dev extras + `just`
+  and activates the versioned `.githooks/`. Bundles the VS Code Python
+  extensions (ruff / black / isort / EditorConfig) and editor settings so
+  the container's formatting matches the repo's lint config out of the box.
 
 This is the **generic core**. Domain-specific add-ons (a golden-file
 parity harness, a Protocol/Strategy capability seam, a pinned-dependency
