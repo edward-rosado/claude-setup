@@ -534,6 +534,112 @@ do_sync() {
 }
 
 # ─── Test Runner ──────────────────────────────────────────
+do_mcp() {
+    local manifest="$SCRIPT_DIR/mcp/servers.json"
+
+    if [[ ! -f "$manifest" ]]; then
+        log_warn "No mcp/servers.json found — nothing to install"
+        return 0
+    fi
+
+    if ! command -v claude &> /dev/null; then
+        log_error "Claude CLI not found. Install Claude Code first: https://docs.claude.com/en/docs/claude-code/install"
+        return 1
+    fi
+
+    if ! command -v python3 &> /dev/null && ! command -v python &> /dev/null; then
+        log_error "Python 3 required to parse mcp/servers.json"
+        return 1
+    fi
+
+    local py
+    if command -v python3 &> /dev/null; then py=python3; else py=python; fi
+
+    # On Windows (Git Bash / MSYS), Python is typically the Windows binary
+    # and does NOT understand /c/Users/... paths. Convert to C:\Users\...
+    # exactly once and use the converted form for every subsequent Python
+    # invocation in this function.
+    local manifest_for_py="$manifest"
+    if [[ "${PLATFORM:-}" == "windows" ]]; then
+        manifest_for_py=$(to_windows_path "$manifest")
+    fi
+
+    local scope
+    scope=$("$py" -c "import json; print(json.load(open(r'$manifest_for_py')).get('scope', 'user'))")
+
+    # Read server names then iterate. Each iteration re-parses the JSON to
+    # extract this server's fields — keeps the bash side simple and lets
+    # users hand-edit servers.json without our script having to understand
+    # every shape.
+    local names
+    names=$("$py" -c "import json; [print(n) for n in json.load(open(r'$manifest_for_py')).get('servers', {}).keys()]")
+
+    if [[ -z "$names" ]]; then
+        log_warn "mcp/servers.json defines no servers"
+        return 0
+    fi
+
+    log_info "Installing MCP servers (scope: $scope) from mcp/servers.json"
+
+    local installed=0 skipped=0 failed=0
+    while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+
+        if claude mcp get "$name" &> /dev/null; then
+            log_ok "$name: already installed (skipping)"
+            skipped=$((skipped + 1))
+            continue
+        fi
+
+        local transport
+        transport=$("$py" -c "import json; s=json.load(open(r'$manifest_for_py'))['servers']['$name']; print(s.get('transport', 'stdio'))")
+
+        if $DRY_RUN; then
+            log_dry "Would install MCP server: $name (transport: $transport)"
+            continue
+        fi
+
+        local rc=0
+        case "$transport" in
+            stdio)
+                # Build: claude mcp add -s <scope> <name> -- <command> <args...>
+                local command_part args_json
+                command_part=$("$py" -c "import json; s=json.load(open(r'$manifest_for_py'))['servers']['$name']; print(s['command'])")
+                args_json=$("$py" -c "import json; s=json.load(open(r'$manifest_for_py'))['servers']['$name']; print(json.dumps(s.get('args', [])))")
+                # Use python to safely emit shell-quoted argv to avoid
+                # accidental word-splitting on spaces in args.
+                local quoted_args
+                quoted_args=$("$py" -c "import json, shlex, sys; args=json.loads(sys.argv[1]); print(' '.join(shlex.quote(a) for a in args))" "$args_json")
+                if ! eval "claude mcp add -s \"$scope\" \"$name\" -- \"$command_part\" $quoted_args" 2>&1; then
+                    rc=1
+                fi
+                ;;
+            http|sse)
+                local url
+                url=$("$py" -c "import json; s=json.load(open(r'$manifest_for_py'))['servers']['$name']; print(s['url'])")
+                if ! claude mcp add --transport "$transport" -s "$scope" "$name" "$url" 2>&1; then
+                    rc=1
+                fi
+                ;;
+            *)
+                log_error "$name: unknown transport '$transport' — supported: stdio, http, sse"
+                rc=1
+                ;;
+        esac
+
+        if [[ $rc -eq 0 ]]; then
+            log_ok "$name: installed"
+            installed=$((installed + 1))
+        else
+            log_warn "$name: install failed — continuing with remaining servers"
+            failed=$((failed + 1))
+        fi
+    done <<< "$names"
+
+    log_info "MCP install summary: $installed installed, $skipped skipped (already present), $failed failed"
+    [[ $failed -eq 0 ]]
+}
+
 do_test() {
     log_info "Running test suite..."
     if [[ -f "$SCRIPT_DIR/tests/test_setup.sh" ]]; then
@@ -553,11 +659,14 @@ Claude Setup — Cross-platform AI tooling bootstrap
 
 Commands:
   --install           Symlink rules + skills into ~/.claude/, install plugins
+  --mcp               Install MCP servers declared in mcp/servers.json (idempotent)
   --generate-mobile   Generate project-knowledge.md for claude.ai mobile
   --sync              Pull new learned instincts from ~/.claude/ into repo
   --uninstall         Remove symlinks, preserve backups
   --check             Dry-run check: show installation status
   --test              Run the test suite
+
+  --install and --mcp can be combined: ./setup.sh --install --mcp
 
 Options:
   --claude-home DIR   Override ~/.claude/ location (for testing)
@@ -577,11 +686,17 @@ EOF
 
 # ─── Main ─────────────────────────────────────────────────
 main() {
+    # Two composable flags (--install and --mcp) plus a single exclusive
+    # command for the maintenance verbs. Composition is intentional: a
+    # fresh machine usually wants both symlinks + MCP servers in one shot.
+    local do_install_flag=false
+    local do_mcp_flag=false
     local command=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --install)          command="install";;
+            --install)          do_install_flag=true;;
+            --mcp)              do_mcp_flag=true;;
             --uninstall)        command="uninstall";;
             --check)            command="check";;
             --generate-mobile)  command="generate-mobile";;
@@ -596,15 +711,22 @@ main() {
         shift
     done
 
-    if [[ -z "$command" ]]; then
+    if ! $do_install_flag && ! $do_mcp_flag && [[ -z "$command" ]]; then
         usage
         exit 1
     fi
 
     detect_platform
 
+    if $do_install_flag; then
+        do_install
+    fi
+
+    if $do_mcp_flag; then
+        do_mcp
+    fi
+
     case "$command" in
-        install)          do_install;;
         uninstall)        do_uninstall;;
         check)            do_check;;
         generate-mobile)  do_generate_mobile;;

@@ -57,6 +57,7 @@
 [CmdletBinding()]
 param(
     [switch]$Install,
+    [switch]$Mcp,
     [switch]$Uninstall,
     [switch]$Check,
     [switch]$GenerateMobile,
@@ -436,6 +437,79 @@ function Invoke-Sync {
 }
 
 # --- Test -----------------------------------------------------------------
+function Invoke-Mcp {
+    $manifest = Join-Path $ScriptDir 'mcp/servers.json'
+    if (-not (Test-Path $manifest)) {
+        Write-Warn "No mcp/servers.json found — nothing to install"
+        return 0
+    }
+
+    if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+        Write-Err "Claude CLI not found. Install Claude Code first: https://docs.claude.com/en/docs/claude-code/install"
+        return 1
+    }
+
+    $config = Get-Content -Raw $manifest | ConvertFrom-Json
+    $scope = if ($config.scope) { $config.scope } else { 'user' }
+    $serverNames = $config.servers.PSObject.Properties.Name
+
+    if (-not $serverNames) {
+        Write-Warn "mcp/servers.json defines no servers"
+        return 0
+    }
+
+    Write-Log "Installing MCP servers (scope: $scope) from mcp/servers.json"
+
+    $installed = 0; $skipped = 0; $failed = 0
+
+    foreach ($name in $serverNames) {
+        $server = $config.servers.$name
+
+        $getOut = & claude mcp get $name 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Ok "${name}: already installed (skipping)"
+            $skipped++
+            continue
+        }
+
+        $transport = if ($server.transport) { $server.transport } else { 'stdio' }
+
+        if ($DryRun) {
+            Write-Dry "Would install MCP server: $name (transport: $transport)"
+            continue
+        }
+
+        $rc = 0
+        switch ($transport) {
+            'stdio' {
+                # claude mcp add -s <scope> <name> -- <command> <args...>
+                $cmdArgs = @('mcp', 'add', '-s', $scope, $name, '--', $server.command) + @($server.args)
+                & claude @cmdArgs
+                $rc = $LASTEXITCODE
+            }
+            { $_ -in 'http', 'sse' } {
+                & claude mcp add --transport $transport -s $scope $name $server.url
+                $rc = $LASTEXITCODE
+            }
+            default {
+                Write-Err "${name}: unknown transport '$transport' — supported: stdio, http, sse"
+                $rc = 1
+            }
+        }
+
+        if ($rc -eq 0) {
+            Write-Ok "${name}: installed"
+            $installed++
+        } else {
+            Write-Warn "${name}: install failed — continuing with remaining servers"
+            $failed++
+        }
+    }
+
+    Write-Log "MCP install summary: $installed installed, $skipped skipped (already present), $failed failed"
+    return $failed
+}
+
 function Invoke-Test {
     Write-Log "Running test suite..."
     $testFile = Join-Path $ScriptDir 'tests/test_setup.sh'
@@ -459,13 +533,16 @@ Usage: .\setup.ps1 [OPTIONS] <COMMAND>
 
 Claude Setup - Windows-native AI tooling bootstrap (PowerShell).
 
-Commands (pass exactly one):
+Commands:
   -Install           Symlink rules + skills into ~/.claude/, merge settings
+  -Mcp               Install MCP servers from mcp/servers.json (idempotent)
   -Uninstall         Remove what was installed, preserve backups
   -Check             Report installation status
   -GenerateMobile    Generate mobile/project-knowledge.md
   -Sync              Pull new learned instincts into the repo
   -Test              Run the test suite (requires bash / Git Bash)
+
+  -Install and -Mcp can be combined: .\setup.ps1 -Install -Mcp
 
 Options:
   -ClaudeHome DIR    Override ~/.claude/ location (for testing)
@@ -480,14 +557,24 @@ Examples:
 }
 
 # --- Main -----------------------------------------------------------------
-$commands = @($Install, $Uninstall, $Check, $GenerateMobile, $Sync, $Test) | Where-Object { $_ }
-if ($commands.Count -ne 1) {
+# -Install and -Mcp are composable; the maintenance verbs (-Uninstall,
+# -Check, -GenerateMobile, -Sync, -Test) are mutually exclusive.
+$exclusive = @($Uninstall, $Check, $GenerateMobile, $Sync, $Test) | Where-Object { $_ }
+if ($exclusive.Count -gt 1) {
+    Write-Err "-Uninstall / -Check / -GenerateMobile / -Sync / -Test are mutually exclusive."
     Show-Usage
     exit 1
 }
 
-if ($Install)        { Invoke-Install }
-elseif ($Uninstall)  { Invoke-Uninstall }
+if (-not $Install -and -not $Mcp -and $exclusive.Count -eq 0) {
+    Show-Usage
+    exit 1
+}
+
+if ($Install) { Invoke-Install }
+if ($Mcp)     { exit (Invoke-Mcp) }
+
+if ($Uninstall)      { Invoke-Uninstall }
 elseif ($Check)      { exit (Invoke-Check) }
 elseif ($GenerateMobile) { Invoke-GenerateMobile }
 elseif ($Sync)       { Invoke-Sync }

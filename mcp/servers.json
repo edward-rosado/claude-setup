@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Declarative source of truth for MCP servers installed by setup.sh --mcp / setup.ps1 -Mcp. Edit this file to add or remove servers; the setup scripts read it at install time.",
+  "scope": "user",
+  "servers": {
+    "playwright": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"],
+      "purpose": "Browser automation for E2E render-checks, scraping, and visual verification. Use whenever a HTTP 200 is not enough proof that a page actually rendered.",
+      "auth": "none",
+      "docs": "https://github.com/microsoft/playwright-mcp"
+    }
+  },
+  "notes": [
+    "Plugin-managed MCPs (Notion, Slack, Gmail, Figma, Google Drive, ms365, GitHub Copilot, Remotion) are activated by enabling their plugin in settings.json — do NOT duplicate them here.",
+    "User-scope (`-s user`) installs are available across every project. Project-scope (`-s project`) writes to the repo's .mcp.json and ships to collaborators; only use that when the MCP is project-specific."
+  ]
+}
